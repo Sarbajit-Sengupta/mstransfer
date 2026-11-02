@@ -60,8 +60,10 @@ class DownloadRequest:
 class DownloadResult:
     """Result of a single download in a batch.
 
-    *error* is the exception that failed the download, or *None* on
-    success, when *path* is the final destination.
+    Exactly one of *path* and *error* is set: *path* is the final
+    destination on success, *error* the exception that failed the download.
+    An exception raised by :meth:`BatchDownloadProgress.on_file_complete`
+    is logged and does not count as a failure.
     """
 
     request: DownloadRequest
@@ -269,14 +271,20 @@ async def async_download_batch(
                     api_key=api_key,
                     client=client,
                 )
-                results[idx].path = result
-                if progress:
-                    progress.on_file_complete(filename)
             except Exception as exc:
                 results[idx].error = exc
                 if progress:
                     progress.on_file_error(filename, exc)
                 logger.error("Failed to download %s: %s", filename, exc)
+            else:
+                results[idx].path = result
+                # A raising callback must not turn a finished download into
+                # a failure, or abort the rest of the batch.
+                if progress:
+                    try:
+                        progress.on_file_complete(filename)
+                    except Exception:
+                        logger.exception("on_file_complete failed for %s", filename)
 
     await asyncio.gather(*[_download_one(i, req) for i, req in enumerate(files)])
 

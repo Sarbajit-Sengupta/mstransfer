@@ -18,9 +18,8 @@ import httpx
 import pytest
 from mscompress.mszx import compress_batch
 
+from mstransfer.client import DownloadRequest, DownloadResult
 from mstransfer.client.downloader import (
-    DownloadRequest,
-    DownloadResult,
     _FileProgressAdapter,
     async_download_batch,
     async_download_file,
@@ -406,6 +405,44 @@ class TestDownloadBatch:
         results = download_batch(requests, skip_existing=True)
         assert results == [DownloadResult(request=requests[0], path=dest)]
         assert dest.read_bytes() == b"pre-existing"
+
+    def test_raising_on_file_complete_is_not_a_failure(self, served_files, tmp_path):
+        """A raising on_file_complete leaves the result a success.
+
+        Its exception is logged, not reported through on_file_error, and the
+        other downloads in the batch still finish.
+        """
+        errors: list[str] = []
+
+        class Tracker:
+            def on_file_start(self, filename: str, total_bytes: int | None) -> None:
+                pass
+
+            def on_file_total(self, filename: str, total_bytes: int | None) -> None:
+                pass
+
+            def on_file_progress(self, filename: str, bytes_delta: int) -> None:
+                pass
+
+            def on_file_complete(self, filename: str) -> None:
+                raise RuntimeError("callback bug")
+
+            def on_file_error(self, filename: str, error: Exception) -> None:
+                errors.append(filename)
+
+        base = served_files["base_url"]
+        requests = [
+            DownloadRequest(url=f"{base}/small.bin", dest=tmp_path / "small.bin"),
+            DownloadRequest(url=f"{base}/medium.bin", dest=tmp_path / "medium.bin"),
+        ]
+        results = download_batch(requests, parallel=1, progress=Tracker())
+
+        assert results == [
+            DownloadResult(request=req, path=req.dest) for req in requests
+        ]
+        assert errors == []
+        assert (tmp_path / "small.bin").read_bytes() == b"hello world"
+        assert (tmp_path / "medium.bin").read_bytes() == b"x" * 10_000
 
     def test_failures_reported_without_progress(self, served_files, tmp_path):
         """Regression test for #81: each failure stays in its input slot.
