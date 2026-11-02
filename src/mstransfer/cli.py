@@ -12,6 +12,7 @@ import uvicorn
 from rich.live import Live
 from rich.table import Table
 
+from mstransfer import __version__
 from mstransfer.client.downloader import DownloadRequest, async_download_batch
 from mstransfer.client.sender import FileResult, async_send_batch
 from mstransfer.client.utils import resolve_inputs
@@ -276,6 +277,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="mstransfer",
         description=("Transfer mass spectrometry files (mzML/MSZ) between endpoints"),
+    )
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     sub = parser.add_subparsers(dest="command")
 

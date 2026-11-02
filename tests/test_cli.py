@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from mstransfer import __version__
+
 from mstransfer.cli import (
     DownloadProgressDisplay,
     UploadProgressDisplay,
@@ -58,6 +60,16 @@ class TestParseTarget:
 
 
 class TestCliParsing:
+    @pytest.mark.parametrize("flag", ["--version", "-V"])
+    def test_version_without_subcommand(self, flag, capsys):
+        with patch.object(sys, "argv", ["mstransfer", flag]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+        assert exc.value.code == 0
+        output = capsys.readouterr()
+        assert output.out == f"mstransfer {__version__}\n"
+        assert output.err == ""
+
     def test_serve_defaults(self):
         """Verify serve subcommand parses with defaults."""
         with patch.object(sys, "argv", ["mstransfer", "serve"]):
