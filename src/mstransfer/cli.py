@@ -13,7 +13,11 @@ import uvicorn
 from rich.live import Live
 from rich.table import Table
 
-from mstransfer.client.downloader import DownloadRequest, async_download_batch
+from mstransfer.client.downloader import (
+    DownloadRequest,
+    DownloadResult,
+    async_download_batch,
+)
 from mstransfer.client.sender import FileResult, async_send_batch
 from mstransfer.client.utils import resolve_inputs
 from mstransfer.server.auth import APIKeyAuthProvider
@@ -201,7 +205,6 @@ class DownloadProgressDisplay:
         self.table.add_row(self.overall)
         self.table.add_row(self.files)
         self._task_ids: dict[str, TaskID] = {}
-        self.failed = 0
 
     def on_file_start(self, filename: str, total_bytes: int | None) -> None:
         task_id = self.files.add_task(filename, total=total_bytes)
@@ -224,7 +227,6 @@ class DownloadProgressDisplay:
         desc = self.files.tasks[task_id].description
         self.files.update(task_id, description=f"[red]{desc}")
         self.overall.advance(self.overall_task)
-        self.failed += 1
 
 
 def cmd_download(args: argparse.Namespace) -> None:
@@ -252,7 +254,7 @@ def cmd_download(args: argparse.Namespace) -> None:
 
     display = DownloadProgressDisplay(len(requests))
 
-    async def _run() -> list[Path]:
+    async def _run() -> list[DownloadResult]:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(300.0, connect=10.0),
         ) as client:
@@ -269,13 +271,14 @@ def cmd_download(args: argparse.Namespace) -> None:
             )
 
     with Live(display.table, console=console, refresh_per_second=10):
-        asyncio.run(_run())
+        results = asyncio.run(_run())
 
-    # Failures are counted by the display, one per request.
-    fail = display.failed
-    ok = len(requests) - fail
-    if fail:
-        console.print(f"\n[green]{ok} succeeded[/], [red]{fail} failed[/]")
+    failed = [r for r in results if r.error is not None]
+    ok = len(results) - len(failed)
+    if failed:
+        console.print(f"\n[green]{ok} succeeded[/], [red]{len(failed)} failed[/]")
+        for r in failed:
+            console.print(f"  [red]- {r.request.url}: {r.error}")
         sys.exit(1)
     console.print(f"\n[green]All {ok} file(s) downloaded successfully.")
 

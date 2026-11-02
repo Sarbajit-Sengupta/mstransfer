@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import aiofiles
@@ -19,6 +19,7 @@ __all__ = [
     "DownloadFormat",
     "DownloadProgressCallback",
     "DownloadRequest",
+    "DownloadResult",
     "async_download_batch",
     "async_download_file",
     "download_batch",
@@ -53,6 +54,19 @@ class DownloadRequest:
 
     url: str
     dest: Path
+
+
+@dataclass
+class DownloadResult:
+    """Result of a single download in a batch.
+
+    *error* is the exception that failed the download, or *None* on
+    success, when *path* is the final destination.
+    """
+
+    request: DownloadRequest
+    path: Path | None = field(default=None)
+    error: Exception | None = field(default=None)
 
 
 async def async_download_file(
@@ -184,7 +198,7 @@ async def async_download_batch(
     force: bool = False,
     api_key: str | None = None,
     client: httpx.AsyncClient | None = None,
-) -> list[Path]:
+) -> list[DownloadResult]:
     """Download multiple files in parallel (async).
 
     Parameters
@@ -217,15 +231,16 @@ async def async_download_batch(
 
     Returns
     -------
-    list[Path]
-        List of final destination paths (in input order, errors excluded).
-        A multi-member ``.mszx`` contributes its archive directory.
+    list[DownloadResult]
+        One result per request, in input order, carrying either the final
+        destination path or the error.  A multi-member ``.mszx`` yields
+        its archive directory as the path.
     """
     workers = min(parallel, len(files))
     sem = asyncio.Semaphore(workers)
 
     # Pre-allocate results list indexed by position for deterministic ordering.
-    results: list[Path | None] = [None] * len(files)
+    results: list[DownloadResult] = [DownloadResult(request=req) for req in files]
 
     async def _download_one(idx: int, req: DownloadRequest) -> None:
         filename = req.dest.name
@@ -254,17 +269,18 @@ async def async_download_batch(
                     api_key=api_key,
                     client=client,
                 )
-                results[idx] = result
+                results[idx].path = result
                 if progress:
                     progress.on_file_complete(filename)
             except Exception as exc:
+                results[idx].error = exc
                 if progress:
                     progress.on_file_error(filename, exc)
                 logger.error("Failed to download %s: %s", filename, exc)
 
     await asyncio.gather(*[_download_one(i, req) for i, req in enumerate(files)])
 
-    return [r for r in results if r is not None]
+    return results
 
 
 def download_file(
@@ -312,7 +328,7 @@ def download_batch(
     force: bool = False,
     api_key: str | None = None,
     client: httpx.AsyncClient | None = None,
-) -> list[Path]:
+) -> list[DownloadResult]:
     """Download multiple files in parallel.
 
     This is a synchronous wrapper around :func:`async_download_batch`.
