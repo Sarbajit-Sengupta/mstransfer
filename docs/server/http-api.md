@@ -28,7 +28,13 @@ Upload one file as a streamed request body of MSZ bytes.
 
 The body is written to `<output-dir>/<stem>.msz`. With `store-as mzml`, it is
 then decompressed to `<stem>.mzML` and the `.msz` is removed. The response
-arrives once storage finishes:
+arrives once storage finishes.
+
+The server never overwrites a stored file. Output names come from the upload's
+stem, so `run1.mzML` and `run1.msz` both map to `run1.msz`. If that output
+already exists, or another in-flight upload is writing it, the server responds
+**409 Conflict** before reading the body.
+
 
 ```json
 {
@@ -45,6 +51,7 @@ arrives once storage finishes:
 | 200 | Stored. `state` is `done`, or `error` if decompression failed |
 | 400 | Missing `X-Transfer-ID` or `X-Original-Filename` |
 | 401 | Auth failed |
+| 409 | The output file already exists, or another transfer is writing it |
 | 500 | Reading the body or writing the file failed |
 
 ## `GET /v1/transfer/{transfer_id}/status`

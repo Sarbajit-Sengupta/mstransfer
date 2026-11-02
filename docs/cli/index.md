@@ -66,7 +66,9 @@ mstransfer upload <paths...> <target> [--recursive] [--parallel 4]
 
 Before uploading, the command checks `GET /v1/health` and exits if the
 server is unreachable. When the batch finishes it prints a summary and lists
-any files that failed.
+any files that failed. A file the server refuses because its output already
+exists ([409 Conflict](../server/http-api.md#post-v1upload)) counts as failed,
+and the command exits non-zero if any file failed.
 
 ## `mstransfer download`
 

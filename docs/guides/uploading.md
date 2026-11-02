@@ -40,7 +40,9 @@ if result.state is TransferState.DONE:
     print("stored at", result.stored_as)
 ```
 
-HTTP errors raise `httpx.HTTPStatusError`. If polling sees no progress for
+HTTP errors raise `httpx.HTTPStatusError`, including the
+[409 Conflict](../server/http-api.md#post-v1upload) the server returns when
+the file's output already exists there. If polling sees no progress for
 `timeout` seconds (default 3600), it raises `TimeoutError`.
 
 ## Many files
