@@ -171,7 +171,7 @@ class MszxExpansion:
         never share staging files.  Names are validated before anything
         is written.
         """
-        targets = self.targets
+        _ = self.targets  # Validate every name before writing anything.
         staging = Path(
             tempfile.mkdtemp(
                 dir=archive_dir.parent, prefix=f".{archive_dir.name}.", suffix=".part"
@@ -182,13 +182,6 @@ class MszxExpansion:
             self._swap_into(staging, archive_dir)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-
-        logger.info(
-            "Extracted %d members from %s into %s",
-            len(targets),
-            self.src.name,
-            archive_dir,
-        )
         return archive_dir
 
     @staticmethod
@@ -341,8 +334,11 @@ class StorePlan:
             return self.final_dest
 
         # Give the temp file the correct source extension so mscompress can
-        # recognise its format, then convert.
-        src = part.with_suffix(conversion.source.ext)
+        # recognise its format, then convert.  The name is hidden and unique
+        # so it never looks like (or collides with) a real output.
+        src = self.dest.with_name(
+            f".{self.dest.stem}.{uuid.uuid4().hex}{conversion.source.ext}"
+        )
         part.rename(src)
         try:
             if self.may_expand:
@@ -350,7 +346,14 @@ class StorePlan:
                 entries = tuple(spectra.entry for spectra in manifest.spectra_files)
                 if len(entries) > 1:
                     expansion = MszxExpansion(src, entries, conversion.target)
-                    return await expansion.write(self.archive_dir)
+                    archive_dir = await expansion.write(self.archive_dir)
+                    logger.info(
+                        "Extracted %d members from %s into %s",
+                        len(entries),
+                        self.dest.name,
+                        archive_dir,
+                    )
+                    return archive_dir
             return await self._convert(src, conversion)
         finally:
             src.unlink(missing_ok=True)
@@ -365,5 +368,5 @@ class StorePlan:
             staging.replace(final_dest)
         finally:
             staging.unlink(missing_ok=True)
-        logger.info("Converted %s → %s", src.name, final_dest.name)
+        logger.info("Converted %s → %s", self.dest.name, final_dest.name)
         return final_dest
