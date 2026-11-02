@@ -188,7 +188,7 @@ def cmd_upload(args: argparse.Namespace) -> None:
         for r in results:
             if r.response and r.response.state == TransferState.DONE:
                 continue
-            err = r.error or (str(r.response.state.value) if r.response else "unknown")
+            err = r.error or (r.response.state.value if r.response else "unknown")
             console.print(f"  [red]- {r.filename}: {err}")
         sys.exit(1)
     console.print(f"\n[green]All {ok} file(s) transferred successfully.")

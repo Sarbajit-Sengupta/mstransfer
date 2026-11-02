@@ -43,11 +43,17 @@ class BatchProgressCallback(Protocol):
 
 @dataclass
 class FileResult:
-    """Result of uploading a single file in a batch."""
+    """Result of uploading a single file in a batch.
+
+    Exactly one of *response* and *error* is set: *response* is the final
+    transfer status on success, *error* the exception that failed the upload.
+    An exception raised by :meth:`BatchProgressCallback.file_done` is logged
+    and does not count as a failure.
+    """
 
     filename: str
     response: UploadResponse | None = field(default=None)
-    error: str | None = field(default=None)
+    error: Exception | None = field(default=None)
 
 
 async def async_send_file(
@@ -259,17 +265,23 @@ async def async_send_batch(
                     timeout=timeout,
                     poll_timeout=poll_timeout,
                 )
-                results[idx] = FileResult(filename=fpath.name, response=result)
-                if progress:
-                    progress.file_done(idx, result)
             except Exception as exc:
-                results[idx] = FileResult(filename=fpath.name, error=str(exc))
+                results[idx] = FileResult(filename=fpath.name, error=exc)
                 if progress:
                     # Progress listeners expect file_started before file_error.
                     if not started:
                         progress.file_started(idx, fpath, None)
                     progress.file_error(idx, exc)
                 logger.error("Failed to send %s: %s", fpath, exc)
+            else:
+                results[idx] = FileResult(filename=fpath.name, response=result)
+                # A raising callback must not turn a finished upload into a
+                # failure, or abort the rest of the batch.
+                if progress:
+                    try:
+                        progress.file_done(idx, result)
+                    except Exception:
+                        logger.exception("file_done failed for %s", fpath)
 
     await asyncio.gather(*[_upload_one(i, s) for i, s in enumerate(sources)])
 

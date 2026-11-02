@@ -315,7 +315,7 @@ class TestCmdUpload:
                     bytes_received=100,
                 ),
             ),
-            FileResult(filename="b.msz", error="Connection reset"),
+            FileResult(filename="b.msz", error=ConnectionError("Connection reset")),
         ]
 
         args = self._make_args(["/data/a.mzML", "/data/b.msz", "host"])
