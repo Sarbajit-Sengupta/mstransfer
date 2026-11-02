@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import socket
 import sys
 from pathlib import Path
@@ -263,6 +264,7 @@ def cmd_download(args: argparse.Namespace) -> None:
                 progress=display,
                 skip_existing=args.skip_existing,
                 force=args.force,
+                api_key=args.api_key,
                 client=client,
             )
 
@@ -302,8 +304,8 @@ def main() -> None:
     )
     lp.add_argument(
         "--api-key",
-        default=None,
-        help="Require this API key for all requests",
+        default=os.environ.get("MS_API_KEY"),
+        help="Require this API key for all requests (default: $MS_API_KEY)",
     )
     lp.set_defaults(func=cmd_serve)
 
@@ -335,8 +337,8 @@ def main() -> None:
     )
     sp.add_argument(
         "--api-key",
-        default=None,
-        help="API key for authenticating with the server",
+        default=os.environ.get("MS_API_KEY"),
+        help="API key for authenticating with the server (default: $MS_API_KEY)",
     )
     sp.set_defaults(func=cmd_upload)
 
@@ -381,6 +383,11 @@ def main() -> None:
         "--force",
         action="store_true",
         help="Re-download even if destination file exists",
+    )
+    dp.add_argument(
+        "--api-key",
+        default=os.environ.get("MS_API_KEY"),
+        help="API key for authenticating with the server (default: $MS_API_KEY)",
     )
     dp.set_defaults(func=cmd_download)
 
