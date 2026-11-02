@@ -61,8 +61,7 @@ async def async_download_file(
     *,
     store_as: DownloadFormat | None = None,
     chunk_size: int = 1_048_576,
-    connect_timeout: float = 10.0,
-    read_timeout: float = 300.0,
+    timeout: httpx.Timeout | None = None,
     progress_callback: DownloadProgressCallback | None = None,
     skip_existing: bool = False,
     force: bool = False,
@@ -96,10 +95,11 @@ async def async_download_file(
         raise :class:`ValueError` before anything is written.
     chunk_size:
         Number of bytes per read chunk (default 1 MiB).
-    connect_timeout:
-        Timeout in seconds for establishing the connection.
-    read_timeout:
-        Timeout in seconds for reading the response body.
+    timeout:
+        Timeouts for the request, replacing *client*'s; pass
+        ``httpx.Timeout(None)`` for no limit.  If *None*, *client*'s
+        timeouts are used (10 s connect, 300 s otherwise, without
+        *client*).
     progress_callback:
         Optional callback.  ``on_total`` is invoked once the server
         responds, with the body size from ``Content-Length`` (or *None* if
@@ -113,6 +113,8 @@ async def async_download_file(
         (overrides *skip_existing*).
     api_key:
         Optional API key, sent as ``Authorization: Bearer <key>``.
+    client:
+        Optional :class:`httpx.AsyncClient` to reuse.
 
     Returns
     -------
@@ -134,7 +136,6 @@ async def async_download_file(
     # Write to a temp .part file to avoid partial downloads.
     part_path = plan.part_path
 
-    timeout = httpx.Timeout(read_timeout, connect=connect_timeout)
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
 
     # Throttle progress callbacks to reduce overhead (default: every 8 MiB).
@@ -143,8 +144,13 @@ async def async_download_file(
     )
 
     async with (
-        optional_client(client, timeout=timeout) as c,
-        c.stream("GET", url, headers=headers) as resp,
+        optional_client(client, timeout=httpx.Timeout(300.0, connect=10.0)) as c,
+        c.stream(
+            "GET",
+            url,
+            headers=headers,
+            timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout,
+        ) as resp,
     ):
         resp.raise_for_status()
 
@@ -172,8 +178,7 @@ async def async_download_batch(
     store_as: DownloadFormat | None = None,
     parallel: int = 4,
     chunk_size: int = 1_048_576,
-    connect_timeout: float = 10.0,
-    read_timeout: float = 300.0,
+    timeout: httpx.Timeout | None = None,
     progress: BatchDownloadProgress | None = None,
     skip_existing: bool = False,
     force: bool = False,
@@ -194,10 +199,11 @@ async def async_download_batch(
         Maximum number of concurrent downloads (capped to file count).
     chunk_size:
         Number of bytes per read chunk.
-    connect_timeout:
-        Timeout in seconds for establishing each connection.
-    read_timeout:
-        Timeout in seconds for reading each response body.
+    timeout:
+        Timeouts for each request, replacing *client*'s; pass
+        ``httpx.Timeout(None)`` for no limit.  If *None*, *client*'s
+        timeouts are used (10 s connect, 300 s otherwise, without
+        *client*).
     progress:
         Optional batch progress callback.
     skip_existing:
@@ -206,6 +212,8 @@ async def async_download_batch(
         If *True*, re-download even if destination exists.
     api_key:
         Optional API key, sent as ``Authorization: Bearer <key>``.
+    client:
+        Optional :class:`httpx.AsyncClient` shared by all downloads.
 
     Returns
     -------
@@ -239,8 +247,7 @@ async def async_download_batch(
                     req.dest,
                     store_as=store_as,
                     chunk_size=chunk_size,
-                    connect_timeout=connect_timeout,
-                    read_timeout=read_timeout,
+                    timeout=timeout,
                     progress_callback=file_progress,
                     skip_existing=skip_existing,
                     force=force,
@@ -266,8 +273,7 @@ def download_file(
     *,
     store_as: DownloadFormat | None = None,
     chunk_size: int = 1_048_576,
-    connect_timeout: float = 10.0,
-    read_timeout: float = 300.0,
+    timeout: httpx.Timeout | None = None,
     progress_callback: DownloadProgressCallback | None = None,
     skip_existing: bool = False,
     force: bool = False,
@@ -284,8 +290,7 @@ def download_file(
             dest,
             store_as=store_as,
             chunk_size=chunk_size,
-            connect_timeout=connect_timeout,
-            read_timeout=read_timeout,
+            timeout=timeout,
             progress_callback=progress_callback,
             skip_existing=skip_existing,
             force=force,
@@ -301,8 +306,7 @@ def download_batch(
     store_as: DownloadFormat | None = None,
     parallel: int = 4,
     chunk_size: int = 1_048_576,
-    connect_timeout: float = 10.0,
-    read_timeout: float = 300.0,
+    timeout: httpx.Timeout | None = None,
     progress: BatchDownloadProgress | None = None,
     skip_existing: bool = False,
     force: bool = False,
@@ -319,8 +323,7 @@ def download_batch(
             store_as=store_as,
             parallel=parallel,
             chunk_size=chunk_size,
-            connect_timeout=connect_timeout,
-            read_timeout=read_timeout,
+            timeout=timeout,
             progress=progress,
             skip_existing=skip_existing,
             force=force,

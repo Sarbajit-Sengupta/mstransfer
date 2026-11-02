@@ -1118,6 +1118,58 @@ class TestAsyncDownloadFile:
             await async_download_file(f"{served_files['base_url']}/nonexistent", dest)
         assert not dest.exists()
 
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            # No timeout keeps the client's own configuration.
+            ({}, {"connect": 5.0, "read": 5.0, "write": 5.0, "pool": 5.0}),
+            # A timeout replaces it, even when client= is passed.
+            (
+                {"timeout": httpx.Timeout(42.0, connect=7.0)},
+                {"connect": 7.0, "read": 42.0, "write": 42.0, "pool": 42.0},
+            ),
+            (
+                {"timeout": httpx.Timeout(None)},
+                {"connect": None, "read": None, "write": None, "pool": None},
+            ),
+        ],
+    )
+    async def test_timeouts_with_client(self, tmp_path, kwargs, expected):
+        """A passed timeout replaces client='s; without one, its own is kept."""
+        seen: list[dict[str, float | None]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions["timeout"])
+            return httpx.Response(200, content=b"data")
+
+        # A client built only for headers keeps httpx's default 5 s timeout.
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), headers={"X-Auth": "t"}
+        ) as client:
+            await async_download_file(
+                "http://test/f.bin", tmp_path / "f.bin", client=client, **kwargs
+            )
+
+        assert seen == [expected]
+
+    async def test_default_timeouts_without_client(self, tmp_path):
+        """Without client= or timeout, requests use 10 s connect, 300 s otherwise."""
+        seen: list[dict[str, float | None]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions["timeout"])
+            return httpx.Response(200, content=b"data")
+
+        real_client = httpx.AsyncClient
+
+        def make_client(**kwargs: object) -> httpx.AsyncClient:
+            return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
+
+        with patch("mstransfer.client.utils.httpx.AsyncClient", make_client):
+            await async_download_file("http://test/f.bin", tmp_path / "f.bin")
+
+        assert seen == [{"connect": 10.0, "read": 300.0, "write": 300.0, "pool": 300.0}]
+
 
 # ---------------------------------------------------------------------------
 # async_download_batch
